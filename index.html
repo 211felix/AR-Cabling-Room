@@ -142,7 +142,7 @@ function getCurveConfig(a, b) {
 // mindar setup
 const mindarThree = new MindARThree({
   container: document.querySelector('#ar-container'),
-  imageTargetSrc: 'https://raw.githubusercontent.com/211felix/AR-Projekt-3D-Assets/main/AR_Marker.mind',
+  imageTargetSrc: 'https://raw.githubusercontent.com/211felix/AR-Cabling-Room/main/AR_Marker.mind',
   maxTrack: 1,
   uiLoading: 'yes',
   uiScanning: 'yes',
@@ -184,28 +184,28 @@ const deviceDefs = [
   {
     name: 'PC', pos: [-0.45, 0.07, 0.2], color: 0x3498db,
     placeholderGeo: new THREE.BoxGeometry(1, 1, 1),
-    modelUrl: 'https://raw.githubusercontent.com/211felix/AR-Projekt-3D-Assets/main/laptop.glb',
+    modelUrl: 'https://raw.githubusercontent.com/211felix/AR-Cabling-Room/main/laptop.glb',
     scale: 0.0075, xOffset: 0, yOffset: -0.063, zOffset: 0, rotationX: 0, rotationY: 55, rotationZ: 0,
     plugOffsetX: 0, plugOffsetY: -0.087, plugOffsetZ: -0.1
   },
   {
     name: 'Switch', pos: [0.35, 0.06, -0.25], color: 0xf39c12,
     placeholderGeo: new THREE.CylinderGeometry(0.6, 0.6, 0.8, 16),
-    modelUrl: 'https://raw.githubusercontent.com/211felix/AR-Projekt-3D-Assets/main/switch.glb',
+    modelUrl: 'https://raw.githubusercontent.com/211felix/AR-Cabling-Room/main/switch.glb',
     scale: 0.225, xOffset: 0.66, yOffset: -0.054, zOffset: 0.23, rotationX: 0, rotationY: -20, rotationZ: 0,
     plugOffsetX: 0, plugOffsetY: -0.06, plugOffsetZ: 0
   },
   {
     name: 'Router', pos: [0.35, 0.0, 0.15], color: 0x9b59b6,
     placeholderGeo: new THREE.CylinderGeometry(0.6, 0.6, 0.8, 6),
-    modelUrl: 'https://raw.githubusercontent.com/211felix/AR-Projekt-3D-Assets/main/router.glb',
+    modelUrl: 'https://raw.githubusercontent.com/211felix/AR-Cabling-Room/main/router.glb',
     scale: 0.115, xOffset: 0, yOffset: -0.2, zOffset: 0, rotationX: 0, rotationY: -120, rotationZ: 0,
     plugOffsetX: 0, plugOffsetY: 0, plugOffsetZ: 0
   },
   {
     name: 'Server', pos: [-0.3, 0.09, -0.25], color: 0x2ecc71,
     placeholderGeo: new THREE.BoxGeometry(1, 1.4, 1),
-    modelUrl: 'https://raw.githubusercontent.com/211felix/AR-Projekt-3D-Assets/main/server_rack.glb',
+    modelUrl: 'https://raw.githubusercontent.com/211felix/AR-Cabling-Room/main/server_rack.glb',
     scale: 0.225, xOffset: 0, yOffset: 0.135, zOffset: 0, rotationX: 0, rotationY: 200, rotationZ: 0,
     plugOffsetX: 0, plugOffsetY: 0.1, plugOffsetZ: 0
   },
