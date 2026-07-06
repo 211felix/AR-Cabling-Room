@@ -97,7 +97,7 @@ window.addEventListener('unhandledrejection', function(event) {
   <h1>AR Cabling Room</h1>
   <div>Tap two devices one after another to connect them.</div>
   <div id="status">Status: 0 / 3 connections correct</div>
-  <div id="timer">⏱️ 60s</div>
+  <div id="timer">⏱️ 30s</div>
   <div id="connections-list">No connections set.</div>
 </div>
 
@@ -291,7 +291,7 @@ let selectedDevice = null;
 const connections = [];
 
 // timer
-const TIMER_DURATION = 60;
+const TIMER_DURATION = 30;
 let remaining = TIMER_DURATION;
 let startTime = Date.now();
 let timerInterval = null;
