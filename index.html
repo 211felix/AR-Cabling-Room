@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
+<title>AR Cabling Room</title>
+<script>
+window.onerror = function(msg, src, line) {
+  document.body.innerHTML = '<div style="color:red;padding:20px;font-size:16px;background:#111;min-height:100vh;font-family:monospace">ERROR:<br>' + msg + '<br><br>File: ' + src + '<br>Line: ' + line + '</div>';
+  return true;
+};
+window.addEventListener('unhandledrejection', function(event) {
+  document.body.innerHTML = '<div style="color:red;padding:20px;font-size:16px;background:#111;min-height:100vh;font-family:monospace">ERROR (Promise):<br>' + event.reason + '</div>';
+});
+</script>
+<style>
+  html, body {
+    margin: 0; padding: 0; overflow: hidden;
+    background: #11151c;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    color: #e8eaed;
+  }
+
+  #ar-container {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100vw; height: 100vh;
+  }
+
+  #hud {
+    position: fixed; top: 16px; left: 16px;
+    background: rgba(20, 24, 32, 0.85);
+    border: 1px solid #2a3140;
+    border-radius: 6px;
+    padding: 12px 16px;
+    font-size: 13px;
+    line-height: 1.5;
+    max-width: 260px;
+    z-index: 999;
+  }
+  #hud h1 {
+    font-size: 14px; margin: 0 0 6px 0; color: #fff;
+    font-weight: 600;
+  }
+  #status { margin-top: 8px; font-weight: 600; }
+  #timer { margin-top: 4px; font-weight: 600; font-size: 15px; }
+  #timer.warn { color: #e74c3c; }
+  #connections-list { margin-top: 8px; font-size: 12px; color: #9aa4b2; }
+
+  #reset-btn {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: #c0392b; color: #fff; border: none;
+    padding: 10px 24px; border-radius: 4px;
+    font-size: 14px; font-weight: 600; cursor: pointer;
+    z-index: 999;
+  }
+  #reset-btn:hover { background: #e74c3c; }
+
+  #fullscreen-btn {
+    position: fixed; top: 16px; right: 16px;
+    background: rgba(20, 24, 32, 0.85);
+    border: 1px solid #2a3140;
+    color: #fff; border-radius: 6px;
+    width: 40px; height: 40px;
+    font-size: 18px; cursor: pointer;
+    z-index: 999;
+  }
+
+  .success-banner {
+    position: fixed; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    background: #1e8449; color: #fff;
+    padding: 20px 40px; border-radius: 8px;
+    font-size: 20px; font-weight: 700;
+    display: none;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    z-index: 999;
+  }
+
+  #marker-hint {
+    position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
+    background: rgba(0,0,0,0.6); color: #fff;
+    padding: 8px 16px; border-radius: 20px;
+    font-size: 13px; z-index: 999;
+    transition: opacity 0.5s;
+  }
+</style>
+</head>
+<body>
+
+<div id="ar-container"></div>
+
+<div id="hud">
+  <h1>AR Cabling Room</h1>
+  <div>Tap two devices one after another to connect them.</div>
+  <div id="status">Status: 0 / 3 connections correct</div>
+  <div id="timer">⏱️ 60s</div>
+  <div id="connections-list">No connections set.</div>
+</div>
+
+<button id="reset-btn">Reset</button>
+<button id="fullscreen-btn" title="Vollbild">⛶</button>
+<div class="success-banner" id="success-banner">✅ Network restored!</div>
+<div class="success-banner" id="timeout-banner" style="background:#c0392b;">⏱️ Time is up! New attempt...</div>
+<div id="marker-hint">📷 Point camera at marker...</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.136.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.136.0/examples/jsm/",
+    "mindar-image-three": "https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { MindARThree } from 'mindar-image-three';
+const TOPOLOGY = [
+  { a: 'PC',     b: 'Switch', curveMode: 'side', curveSide: 1  },
+  { a: 'Switch', b: 'Router', curveMode: 'side', curveSide: 1 },
+  { a: 'Router', b: 'Server', curveMode: 'down', curveSide: 1  },
+];
+
+function isValidConnection(a, b) {
+  return TOPOLOGY.some(e =>
+    (e.a === a && e.b === b) || (e.a === b && e.b === a)
+  );
+}
+
+function getCurveConfig(a, b) {
+  const eintrag = TOPOLOGY.find(e =>
+    (e.a === a && e.b === b) || (e.a === b && e.b === a)
+  );
+  return eintrag || { curveMode: 'side', curveSide: 1 };
+}
+
+// mindar setup
+const mindarThree = new MindARThree({
+  container: document.querySelector('#ar-container'),
+  imageTargetSrc: 'https://raw.githubusercontent.com/211felix/AR-Projekt-3D-Assets/main/AR_Marker.mind',
+  maxTrack: 1,
+  uiLoading: 'yes',
+  uiScanning: 'yes',
+  uiError: 'yes',
+});
+
+const { renderer, scene, camera } = mindarThree;
+
+// lights
+scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
+dirLight.position.set(0, 5, 3);
+scene.add(dirLight);
+
+// rotate content 90deg so the wall-oriented layout sits flat on the table.
+// has to be a child group, mindar overwrites anchor.group every frame
+const anchor = mindarThree.addAnchor(0);
+const contentGroup = new THREE.Group();
+contentGroup.rotation.x = Math.PI / 2;
+anchor.group.add(contentGroup);
+const anchorGroup = contentGroup;
+
+// hide hint once marker is found
+anchor.onTargetFound = () => {
+  document.getElementById('marker-hint').style.opacity = '0';
+  if (!timerStarted) {
+    timerStarted = true;
+    startTimer();
+  }
+};
+anchor.onTargetLost = () => {
+  document.getElementById('marker-hint').style.opacity = '1';
+};
+
+// devices
+const HITBOX_SIZE = [0.18, 0.21, 0.18];
+
+const deviceDefs = [
+  {
+    name: 'PC', pos: [-0.45, 0.07, 0.2], color: 0x3498db,
+    placeholderGeo: new THREE.BoxGeometry(1, 1, 1),
+    modelUrl: 'https://raw.githubusercontent.com/211felix/AR-Projekt-3D-Assets/main/laptop.glb',
+    scale: 0.0075, xOffset: 0, yOffset: -0.063, zOffset: 0, rotationX: 0, rotationY: 55, rotationZ: 0,
+    plugOffsetX: 0, plugOffsetY: -0.087, plugOffsetZ: -0.1
+  },
+  {
+    name: 'Switch', pos: [0.35, 0.06, -0.25], color: 0xf39c12,
+    placeholderGeo: new THREE.CylinderGeometry(0.6, 0.6, 0.8, 16),
+    modelUrl: 'https://raw.githubusercontent.com/211felix/AR-Projekt-3D-Assets/main/switch.glb',
+    scale: 0.225, xOffset: 0.66, yOffset: -0.054, zOffset: 0.23, rotationX: 0, rotationY: -20, rotationZ: 0,
+    plugOffsetX: 0, plugOffsetY: -0.06, plugOffsetZ: 0
+  },
+  {
+    name: 'Router', pos: [0.35, 0.0, 0.15], color: 0x9b59b6,
+    placeholderGeo: new THREE.CylinderGeometry(0.6, 0.6, 0.8, 6),
+    modelUrl: 'https://raw.githubusercontent.com/211felix/AR-Projekt-3D-Assets/main/router.glb',
+    scale: 0.115, xOffset: 0, yOffset: -0.2, zOffset: 0, rotationX: 0, rotationY: -120, rotationZ: 0,
+    plugOffsetX: 0, plugOffsetY: 0, plugOffsetZ: 0
+  },
+  {
+    name: 'Server', pos: [-0.3, 0.09, -0.25], color: 0x2ecc71,
+    placeholderGeo: new THREE.BoxGeometry(1, 1.4, 1),
+    modelUrl: 'https://raw.githubusercontent.com/211felix/AR-Projekt-3D-Assets/main/server_rack.glb',
+    scale: 0.225, xOffset: 0, yOffset: 0.135, zOffset: 0, rotationX: 0, rotationY: 200, rotationZ: 0,
+    plugOffsetX: 0, plugOffsetY: 0.1, plugOffsetZ: 0
+  },
+];
+
+const devices = {};
+const gltfLoader = new GLTFLoader();
+
+deviceDefs.forEach(def => {
+  const hitboxGeo = new THREE.BoxGeometry(...HITBOX_SIZE);
+  const hitboxMat = new THREE.MeshBasicMaterial({ visible: false });
+  const hitbox = new THREE.Mesh(hitboxGeo, hitboxMat);
+  hitbox.position.set(...def.pos);
+  hitbox.userData.deviceName = def.name;
+  hitbox.userData.baseColor = def.color;
+  anchorGroup.add(hitbox);
+
+  devices[def.name] = { hitbox, visual: null, basePos: new THREE.Vector3(...def.pos) };
+
+  if (def.modelUrl) {
+    loadModel(def.name, def.modelUrl, def.scale, def.xOffset, def.yOffset, def.zOffset, def.rotationX, def.rotationY, def.rotationZ);
+  } else {
+    setPlaceholder(def.name, def.placeholderGeo, def.color);
+  }
+
+  const label = makeTextSprite(def.name);
+  label.position.set(0, 0.18, 0);
+  hitbox.add(label);
+});
+
+function setPlaceholder(name, geo, color) {
+  const device = devices[name];
+  const mat = new THREE.MeshStandardMaterial({ color });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.userData.isPlaceholder = true;
+  device.hitbox.add(mesh);
+  device.visual = mesh;
+}
+
+function loadModel(name, url, scale = 1, xOffset = 0, yOffset = 0, zOffset = 0, rotationX = 0, rotationY = 0, rotationZ = 0) {
+  const device = devices[name];
+  gltfLoader.load(
+    url,
+    function (gltf) {
+      if (device.visual) device.hitbox.remove(device.visual);
+      const model = gltf.scene;
+      model.scale.setScalar(scale);
+      model.position.set(xOffset, yOffset, zOffset);
+      model.rotation.set(
+        rotationX * Math.PI / 180,
+        rotationY * Math.PI / 180,
+        rotationZ * Math.PI / 180
+      );
+      device.hitbox.add(model);
+      device.visual = model;
+    },
+    undefined,
+    function (error) {
+      console.error(`Failed to load model "${name}":`, error);
+    }
+  );
+}
+
+function makeTextSprite(text) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256; canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = 'rgba(0,0,0,0)';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.font = 'bold 36px sans-serif';
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'center';
+  ctx.fillText(text, 128, 42);
+  const texture = new THREE.CanvasTexture(canvas);
+  const mat = new THREE.SpriteMaterial({ map: texture, depthTest: false });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(0.24, 0.06, 1);
+  return sprite;
+}
+
+// selection + wiring
+let selectedDevice = null;
+const connections = [];
+
+// timer
+const TIMER_DURATION = 60;
+let remaining = TIMER_DURATION;
+let startTime = Date.now();
+let timerInterval = null;
+let won = false;
+let timerStarted = false;
+
+function startTimer() {
+  clearInterval(timerInterval);
+  remaining = TIMER_DURATION;
+  startTime = Date.now();
+  won = false;
+  updateTimerDisplay();
+  timerInterval = setInterval(() => {
+    remaining--;
+    updateTimerDisplay();
+    if (remaining <= 0) {
+      clearInterval(timerInterval);
+      if (!won) timeUp();
+    }
+  }, 1000);
+}
+
+function updateTimerDisplay() {
+  const el = document.getElementById('timer');
+  el.textContent = `⏱️ ${remaining}s`;
+  el.classList.toggle('warn', remaining <= 10);
+}
+
+function timeUp() {
+  const banner = document.getElementById('timeout-banner');
+  banner.style.display = 'block';
+  setTimeout(() => {
+    banner.style.display = 'none';
+    resetScene();
+  }, 2000);
+}
+
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+
+// mobile touch + click
+window.addEventListener('touchstart', onTouch, { passive: false });
+window.addEventListener('click', onSceneClick);
+
+function onTouch(event) {
+  if (event.target.closest('#reset-btn, #fullscreen-btn, #hud')) return;
+  event.preventDefault();
+  const touch = event.touches[0];
+  onSceneClick({ clientX: touch.clientX, clientY: touch.clientY, target: event.target });
+}
+
+function onSceneClick(event) {
+
+  // ignore taps on ui elements
+  if (event.target && event.target.closest('#reset-btn, #fullscreen-btn, #hud')) return;
+
+  mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+  scene.updateMatrixWorld(true);
+  raycaster.setFromCamera(mouse, camera);
+
+  const hitboxes = Object.values(devices).map(d => d.hitbox);
+  const hits = raycaster.intersectObjects(hitboxes, true);
+  if (hits.length === 0) return;
+
+  let obj = hits[0].object;
+  while (obj && !obj.userData.deviceName) obj = obj.parent;
+  if (!obj) return;
+
+  handleDeviceClick(obj.userData.deviceName);
+}
+
+function handleDeviceClick(name) {
+  if (!selectedDevice) {
+    selectedDevice = name;
+    setSelectionMarker(name, true);
+    return;
+  }
+  if (selectedDevice === name) {
+    setSelectionMarker(name, false);
+    selectedDevice = null;
+    return;
+  }
+  const a = selectedDevice;
+  const b = name;
+  setSelectionMarker(a, false);
+  selectedDevice = null;
+
+  const existsAlready = connections.some(c =>
+    (c.a === a && c.b === b) || (c.a === b && c.b === a)
+  );
+  if (existsAlready) return;
+  createConnection(a, b);
+}
+
+function setSelectionMarker(name, aktiv) {
+  const device = devices[name];
+  if (aktiv) {
+    if (!device.selectionRing) {
+      const ringGeo = new THREE.RingGeometry(0.1, 0.13, 32);
+      const ringMat = new THREE.MeshBasicMaterial({
+        color: 0xf1c40f, side: THREE.DoubleSide, transparent: true, opacity: 0.9
+      });
+      const ring = new THREE.Mesh(ringGeo, ringMat);
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.y = -device.hitbox.position.y + 0.02;
+      device.hitbox.add(ring);
+      device.selectionRing = ring;
+    }
+    device.selectionRing.visible = true;
+  } else if (device.selectionRing) {
+    device.selectionRing.visible = false;
+  }
+}
+
+function createConnection(a, b) {
+  const correct = isValidConnection(a, b);
+  const color = correct ? 0x2ecc71 : 0xe74c3c;
+
+  const defA = deviceDefs.find(d => d.name === a);
+  const defB = deviceDefs.find(d => d.name === b);
+
+  const posA = devices[a].hitbox.position.clone();
+  posA.x += defA.plugOffsetX;
+  posA.y += defA.plugOffsetY + 0.02;
+  posA.z += defA.plugOffsetZ;
+
+  const posB = devices[b].hitbox.position.clone();
+  posB.x += defB.plugOffsetX;
+  posB.y += defB.plugOffsetY + 0.02;
+  posB.z += defB.plugOffsetZ;
+
+  const mid = posA.clone().lerp(posB, 0.5);
+  const distance = posA.distanceTo(posB);
+  const { curveMode, curveSide } = getCurveConfig(a, b);
+
+  if (curveMode === 'down') {
+    mid.y -= distance * 0.18;
+  } else {
+    const direction = posB.clone().sub(posA).normalize();
+    const perpendicular = new THREE.Vector3(-direction.z, 0, direction.x);
+    mid.addScaledVector(perpendicular, distance * 0.25 * curveSide);
+    mid.y = (posA.y + posB.y) / 2;
+  }
+
+  const curve = new THREE.QuadraticBezierCurve3(posA, mid, posB);
+  const tubeGeo = new THREE.TubeGeometry(curve, 20, 0.004, 8, false);
+  const tubeMat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.6, metalness: 0.1 });
+  const line = new THREE.Mesh(tubeGeo, tubeMat);
+  anchorGroup.add(line);
+
+  connections.push({ a, b, correct, line });
+  updateHUD();
+  checkCompletion();
+}
+
+function checkCompletion() {
+  const correctConnections = connections.filter(c => c.correct).length;
+  if (correctConnections === TOPOLOGY.length && connections.every(c => c.correct)) {
+    won = true;
+    clearInterval(timerInterval);
+    const elapsed = Math.round((Date.now() - startTime) / 1000);
+    const banner = document.getElementById('success-banner');
+    banner.textContent = `✅ Network restored! (${elapsed}s)`;
+    banner.style.display = 'block';
+  }
+}
+
+function updateHUD() {
+  const correctConnections = connections.filter(c => c.correct).length;
+  document.getElementById('status').textContent =
+    `Status: ${correctConnections} / ${TOPOLOGY.length} connections correct`;
+  const list = document.getElementById('connections-list');
+  if (connections.length === 0) {
+    list.textContent = 'No connections set.';
+  } else {
+    list.innerHTML = connections.map(c =>
+      `${c.correct ? '✓' : '✗'} ${c.a} – ${c.b}`
+    ).join('<br>');
+  }
+}
+
+document.getElementById('reset-btn').addEventListener('click', resetScene);
+
+document.getElementById('fullscreen-btn').addEventListener('click', () => {
+  if (document.documentElement.requestFullscreen) {
+    document.documentElement.requestFullscreen().catch(() => {});
+  }
+});
+
+function resetScene() {
+  connections.forEach(c => anchorGroup.remove(c.line));
+  connections.length = 0;
+  if (selectedDevice) setSelectionMarker(selectedDevice, false);
+  selectedDevice = null;
+  document.getElementById('success-banner').style.display = 'none';
+  updateHUD();
+  // restart timer now if marker is visible, otherwise on next find
+  clearInterval(timerInterval);
+  remaining = TIMER_DURATION;
+  updateTimerDisplay();
+  timerStarted = false;
+  if (document.getElementById('marker-hint').style.opacity === '0') {
+    timerStarted = true;
+    startTimer();
+  }
+}
+
+// start
+const start = async () => {
+  await mindarThree.start();
+  renderer.setAnimationLoop(() => {
+    renderer.render(scene, camera);
+  });
+};
+start();
+
+</script>
+</body>
+</html>
