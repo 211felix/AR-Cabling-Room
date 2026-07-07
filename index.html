@@ -454,11 +454,23 @@ function checkCompletion() {
   if (correctConnections === TOPOLOGY.length && connections.every(c => c.correct)) {
     won = true;
     clearInterval(timerInterval);
-    const elapsed = Math.round((Date.now() - startTime) / 1000);
+    const elapsedMs = Date.now() - startTime;
+    const elapsedSec = Math.round(elapsedMs / 1000);
     const banner = document.getElementById('success-banner');
-    banner.textContent = `✅ Network restored! (${elapsed}s)`;
+    banner.textContent = `✅ Network restored! (${elapsedSec}s)`;
     banner.style.display = 'block';
+    sendScore(elapsedMs);
   }
+}
+
+function sendScore(score) {
+  fetch("http://127.0.0.1:3001/score", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ score: score })
+  }).catch(err => console.error("Score request failed:", err));
 }
 
 function updateHUD() {
